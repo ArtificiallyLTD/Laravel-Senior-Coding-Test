@@ -1,6 +1,6 @@
-# Laravel Coding Test for Artificially
+# Senior Laravel Coding Test - Artificially
 
-Welcome to the first stage of our recruitment process at **Artificially**! This test is designed to assess your proficiency in **Laravel**, focusing on creating RESTful APIs, middleware, a custom Artisan command, and unit testing.
+Welcome to our technical assessment at **Artificially**. This test evaluates your proficiency in **Laravel** architecture, async processing, advanced validation, and testing practices.
 
 Our website: [artificially.io](https://artificially.io)
 
@@ -8,104 +8,160 @@ Our website: [artificially.io](https://artificially.io)
 
 ## Objective
 
-You are tasked with building a **File Management API**. This API will allow users to manage files (upload, list, delete), and you must also create an Artisan command that randomly selects a file from storage and performs a simple action with it (e.g., log its details).
+Build a **File Processing API** that handles file uploads with async processing, metadata extraction, and webhook notifications.
 
 ---
 
 ## Requirements
 
-### 1. API Features
+### 1. API Endpoints
 
-1. **API Endpoints**:
-   - `GET /files` – Retrieve a list of all uploaded files.
-   - `POST /files` – Upload a new file.
-   - `GET /files/{id}` – Retrieve a single file for download/display.
-   - `DELETE /files/{id}` – Delete a file.
-
-2. **Middleware**:
-   - Protect the `POST` and `DELETE` routes using a custom token check.
-   - Only requests with `Authorization: Bearer artificially-token` should succeed on these endpoints.
-
-3. **Validation**:
-   - Ensure that the `POST /files` endpoint validates:
-     - **file** (required, must be a valid file type).
-   - Any additional metadata you collect about the file (e.g., name, description) should also be validated.
-
-4. **Service Layer**:
-   - Create a `FileService` class to handle file-related business logic (e.g., storing files, deleting files).
-
-5. **Custom Artisan Command**:
-   - A command, for example: `php artisan file:random`.
-   - This command should:
-     - Select a random file from your storage folder/database.
-     - Perform an action (e.g., log its name and path, or print details to the console).
-
-6. **Unit Tests**:
-   - Write tests to validate:
-     - Uploading a file.
-     - Retrieving the list of files.
-     - Middleware token protection.
-     - The custom Artisan command’s functionality.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/files` | Upload a file for processing |
+| `GET` | `/files` | List all files with filtering & pagination |
+| `GET` | `/files/{id}` | Retrieve file details and processing status |
+| `DELETE` | `/files/{id}` | Soft delete a file |
 
 ---
 
-## Instructions
+### 2. File Upload & Processing Flow
 
-1. **Clone the Repository**  
-   Clone this repository to your local environment:
-   ```bash
-   git@github.com:ArtificiallyLTD/Laravel-Coding-Test.git
-   cd Laravel-Coding-Test
-    ```
-2. **Setup the Project**
-    - Install the project dependencies:
-      ```bash
-      composer install
-      ```
-    - Create a new `.env` file:
-      ```bash
-      cp .env.example .env
-      ```
-    - Generate an application key:
-      ```bash
-      php artisan key:generate
-      ```
-    - Create a new SQLite database:
-      ```bash
-      touch database/database.sqlite
-      ```
-    - Run the database migrations:
-      ```bash
-      php artisan migrate
-      ```
-3. **Build the API**  
-   Implement the API features outlined in the requirements section.
-   - Create the necessary routes, controllers, middleware, and services.
-   - Implement the custom Artisan command.
-   - Implement file uploads and retrieval logic.
-   - Enforce token-based authentication on the POST and DELETE routes via middleware
+1. **Upload (`POST /files`)**:
+   - Accept file + metadata (name, description, webhook_url)
+   - Validate and store file immediately
+   - Return `202 Accepted` with file ID and `status: pending`
+   - Dispatch a job for async processing
 
-4. **Create Custom Artisan Command**  
-   Create a custom Artisan command that selects a random file from your storage folder/database and performs an action with it.
-5. **Write Unit Tests**  
-   Write unit tests to validate the functionality of the API endpoints, middleware, and custom Artisan command.
-6. **Submit Your Solution**  
-   Once you have completed the task, push your code to a **private** repository on GitHub and invite the following users as collaborators: `contact@artificially.io`
-7. **Review**  
-   We will review your code and provide feedback on your submission.
+2. **Processing Job**:
+   - Extract file metadata (size, mime type, hash)
+   - Simulate processing delay (2-3 seconds)
+   - Update file status to `completed` or `failed`
+   - Send POST request to `webhook_url` with results (if provided)
+
+---
+
+### 3. Advanced Validation
+
+Implement the following validation rules on `POST /files`:
+
+| Field | Rules |
+|-------|-------|
+| `file` | Required, max 10MB, allowed types: pdf, png, jpg, docx |
+| `name` | Required, max 255 chars, alphanumeric + spaces only |
+| `description` | Optional, max 1000 chars |
+| `webhook_url` | Optional, must be valid HTTPS URL, must respond to HEAD request within 2 seconds |
+
+**Custom Validation Rules Required:**
+- Create a custom rule that validates `webhook_url` is reachable
+- Create a custom rule that checks file content matches its extension (not just mime spoofing)
+
+---
+
+### 4. Architecture Requirements
+```
+app/
+├── Http/
+│   ├── Controllers/FileController.php
+│   ├── Requests/StoreFileRequest.php
+│   ├── Middleware/TokenAuthMiddleware.php
+│   └── Resources/FileResource.php
+├── Services/
+│   ├── FileService.php
+│   └── WebhookService.php
+├── Jobs/
+│   └── ProcessFileJob.php
+├── Rules/
+│   ├── ReachableUrl.php
+│   └── ValidFileContent.php
+└── Models/
+    └── File.php
+```
+
+---
+
+### 5. Database Schema
+
+`files` table should include:
+- `id`, `uuid`, `name`, `description`, `original_filename`, `path`, `mime_type`, `size`, `hash`, `status` (pending/processing/completed/failed), `webhook_url`, `processed_at`, `deleted_at`, `timestamps`
+
+---
+
+### 6. Middleware
+
+- Protect `POST` and `DELETE` routes with token authentication
+- Header: `Authorization: Bearer artificially-token`
+- Return proper `401` response with JSON error message
+
+---
+
+### 7. Artisan Command
+
+Create `php artisan files:retry-failed`
+- Finds all files with `status: failed`
+- Re-dispatches processing jobs for each
+- Outputs count of retried files
+
+---
+
+### 8. Testing Requirements
+
+Write **Feature** and **Unit** tests covering:
+
+| Test Type | Coverage |
+|-----------|----------|
+| Feature | All endpoints with auth success/failure |
+| Feature | Validation rejection scenarios |
+| Feature | File upload triggers job dispatch |
+| Unit | Custom validation rules |
+| Unit | FileService methods |
+| Unit | ProcessFileJob execution |
+
+Use `Queue::fake()` and `Http::fake()` where appropriate.
+
+---
+
+## Setup Instructions
+```bash
+git clone git@github.com:ArtificiallyLTD/Laravel-Coding-Test.git
+cd Laravel-Coding-Test
+
+composer install
+cp .env.example .env
+php artisan key:generate
+
+touch database/database.sqlite
+php artisan migrate
+
+# Queue setup (use sync for testing, database/redis for demo)
+php artisan queue:table
+php artisan migrate
+```
+
+---
+
+## Submission
+
+1. Push to a **private** GitHub repository
+2. Invite `contact@artificially.io` as collaborator
+3. Include updated README with any setup notes
+
+---
 
 ## Evaluation Criteria
 
-Your submission will be evaluated based on:
-1.	**Code Quality**
-- Clean, readable code with appropriate comments.
-- Proper use of Laravel features (controllers, services, middleware, storage, etc.). 
-2. **Functionality**
-- Complete, working endpoints (upload, list, delete, retrieve).
-- Middleware that correctly restricts certain endpoints.
-- Random file command working as expected. 
-3. **Testing**
-- Comprehensive coverage of the outlined features.
-- Proper handling of edge cases. 
-4. **Documentation**
-- Clear and concise documentation in README.md on setup, usage, and testing steps.
+| Criteria | Weight |
+|----------|--------|
+| Architecture & code organization | 25% |
+| Queue/job implementation | 20% |
+| Validation (including custom rules) | 20% |
+| Test coverage & quality | 20% |
+| Error handling & edge cases | 15% |
+
+---
+
+## Time Expectation
+
+This task is designed for **2-3 hours**. Focus on clean implementation over extra features.
+
+Good luck!
